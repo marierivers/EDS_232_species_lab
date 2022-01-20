@@ -684,6 +684,7 @@ thr
 ```{r}
 p_true <- na.omit(raster::extract(y_maxv, pts_test_p) >= thr)
 a_true <- na.omit(raster::extract(y_maxv, pts_test_a) < thr)
+
 ```
 
 ```{r}
