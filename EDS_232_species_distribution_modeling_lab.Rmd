@@ -709,5 +709,6 @@ points(fpr, tpr, pch=23, bg='blue')
 
 ```{r}
 plot(y_maxv > thr)
+
 ```
 
