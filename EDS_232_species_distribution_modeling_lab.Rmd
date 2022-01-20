@@ -643,6 +643,7 @@ response(mdl_maxv)
 ```
 
 ```{r}
+
 # predict
 y_maxv <- predict(env_stack, mdl_maxv) # ext=ext, progress=''
 
