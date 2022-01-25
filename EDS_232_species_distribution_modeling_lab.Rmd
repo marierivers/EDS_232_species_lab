@@ -4,6 +4,9 @@ author: "Marie Rivers"
 date: "1/20/2022"
 output: html_document
 ---
+This lab uses bald eagle (Haliaeetus leucocephalus) species observations from the Global Biodiversity Favility (GBIF.org) and environmental data to model species distribution.
+
+![Bald Eagle (Haliaeetus leucocephalus)](images/bald_eagle_img.jpeg)
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
@@ -55,30 +58,20 @@ if (!file.exists(obs_geo) | redo){
     sf::st_as_sf(
       coords = c("longitude", "latitude"),
       crs = st_crs(4326)) %>% 
-    select(prov, key, issues, basisOfRecord, occurrenceStatus, eventDate, isInCluster, lifeStage, locality, collectionCode, recordedBy, fieldNotes, eventTime, behavior, verbatimElevation, lifeStage, dateIdentified, stateProvince, verbatimLocality, occurrenceRemarks, identificationID, occurrenceRemarks, informationWithheld, identificationRemarks) # save space (joinable from obs_csv)
+    select(prov, key, issues, basisOfRecord, occurrenceStatus, eventDate, isInCluster, lifeStage, locality, collectionCode, recordedBy, fieldNotes, eventTime, behavior, verbatimElevation, lifeStage, dateIdentified, stateProvince, verbatimLocality, occurrenceRemarks, identificationID, occurrenceRemarks, informationWithheld, identificationRemarks) #%>% # save space (joinable from obs_csv)
+    #filter(lifeStage != "Egg")
   sf::write_sf(obs, obs_geo, delete_dsn=T)
 }
 obs <- sf::read_sf(obs_geo)
 nrow(obs) # number of rows
 ```
-
-## check for duplicate observations
+## Cleaning
 ```{r}
-# duplicates <- duplicated(df$)
-# sum(duplicates)
-# 
-# df_dup_check <- df %>% 
-#   mutate(dups = duplicates)
+obs <- obs %>% 
+  filter(!lifeStage %in% c("Egg"))
 ```
 
-```{r}
-duplicates <- duplicated(obs$geometry)
-sum(duplicates)
-
-obs_dup_check <- obs %>% 
-  mutate(dups = duplicates)
-```
-
+This map shows the distribution of bald eagle observations.
 ```{r}
 # show points on map
 mapview::mapview(obs, map.types = "Esri.WorldPhysical")
@@ -88,7 +81,10 @@ mapview::mapview(obs, map.types = "Esri.WorldPhysical")
 There are a total of 3,943,548 observations for bald eagle in the GBIF database. For this model, I limited the number of observations to 10,000.
 
 **Question 2**
-xxx...odd observations
+I used the `unique()` function to check for odd observations. For all observations, the `basisOfrecord` was "human_observation". The `issues` and `occurrenceRemarks` fields didn't not have any concerning entries. The `occurrenceStatus` was "present" for all observations. I checked for duplicate geometries (732), but decided to keep these records because they likely indicate mated pairs. While eagles can be found in a variety of habitats, they only build nests in the most desirable locations and I did not want to lose these important observations.
+
+For the `lifeStage` field, 1 observation was listed as "Egg" so I removed this observation.
+After cleaning, there were 9,999 observations.
 
 ## Get Environmental Data
 ### Presence
@@ -116,9 +112,14 @@ env_layers <- sdmpredictors::list_layers(env_datasets_vec)
 DT::datatable(env_layers)
 ```
 
+Based on the literature, bald eagles prefer habits near wetlands and open bodies of water with abundance fish such as seacoasts, rivers, lakes, and marshes. Eagles also prefer trees near water, particularly old growth and mature stands of coniferous or hardwood trees. Eagles can live in a wide range of temperatures.
+
+The environmental predictors selected for this analysis included: altitude, annual mean temperature, mean diurnal temperature range, terrain roughness index, topographic wetness, annual precipitation, annual potential evapotranspiration, and the Thornthwaite aridity index which is an index of the degree of water deficit below water need.
+
+Other potentially useful predictors that were not available for the WorldClim or ENVIREM data sets include forested area and proximity to low/medium/high density populations of humans.
 ```{r}
 # choose layers after some inspection and perhaps consulting literature
-env_layers_vec <- c("WC_alt", "WC_bio1", "WC_bio2", "ER_tri", "ER_topoWet")
+env_layers_vec <- c("WC_alt", "WC_bio1", "WC_bio2", "ER_tri", "ER_topoWet", "WC_bio12", "ER_annualPET", "ER_aridityIndexThornthwaite")
 
 # get layers
 env_stack <- load_layers(env_layers_vec)
@@ -147,6 +148,7 @@ mapview(
   list(obs, obs_hull))
 ```
 
+Plots of environmental rasters clipped to the bald eagle range
 ```{r}
 if (!file.exists(env_stack_grd) | redo){
   obs_hull_sp <- sf::as_Spatial(obs_hull)
@@ -163,6 +165,7 @@ plot(env_stack, nc=2)
 ```
 
 ### Pseudo-Absence
+Map with pseudo-absence points
 ```{r}
 absence_geo <- file.path(dir_data, "absence.geojson")
 pts_geo     <- file.path(dir_data, "pts.geojson")
@@ -267,8 +270,8 @@ pts_env %>%
     legend.position = c(1, 0),
     legend.justification = c(1, 0))
 ```
-Based on the results of Term Plots, topographic wetness (ER_topoWet) and terrain roughness index (ER_tri) are similarly distributed for presence and absence points and are therefore likely not strong predictors for a bald eagle species distribution model.
-xxx...try adding other predictors
+
+Based on the results of Term Plots, topographic wetness (ER_topoWet) and terrain roughness index (ER_tri) are similarly distributed for presence and absence points and are therefore likely not strong predictors for a bald eagle species distribution model. The term plots suggest that annual mean temperature (WC_bio1), annual precipitation (WC_bio12), and annual potential evapotranspiration (ER_annualPET) could be useful predictors of bald eagle species distribution. 
 
 ## Pairs plot to show correlations between variables
 ```{r}
@@ -276,7 +279,8 @@ GGally::ggpairs(
   select(pts_env, -ID),
   aes(color = factor(present), alpha = 0.5))
 ```
-Based on the results of the pairs plots, the most strongly correlated environmental predictors are topographic wetness (ER_topoWet) and terrain roughness index (ER_tri).
+
+Based on the results of the pairs plots, the most strongly correlated environmental predictors are topographic wetness (ER_topoWet)/terrain roughness index (ER_tri) and latitude/annual mean temperature (WC_bio1).
 
 # Part 2: Logistic Regression
 ## Setup Data
@@ -306,7 +310,7 @@ range(y_predict)
 ```{r}
 range(y_true)
 ```
-An issue with this linear model is that the predicted response is not limited to a binary 0 or 1 to represent absence or precense.
+An issue with this linear model is that the predicted response is not limited to a binary 0 or 1 to represent absence or presence.
 
 ## Generalized Linear Model
 This model constrains the response to be closer to the range from 0 to 1.
@@ -326,6 +330,7 @@ Look at the terms plots to see the relationship between predictor and response
 # show term plots
 termplot(mdl_glm, partial.resid = TRUE, se = TRUE, main = F, ylim = "free")
 ```
+
 ## Generalize Additive Model
 With a general additive model we can add "wiggle" to the relationship between predictor and response by introducing smooth s() terms
 ```{r}
@@ -333,18 +338,20 @@ librarian::shelf(mgcv)
 
 # fit a generalized additive model with smooth predictors
 mdl_gen_add <- mgcv::gam(
-  formula = present ~ s(WC_alt) + s(WC_bio1) + s(WC_bio2) + s(ER_tri) + s(ER_topoWet) + s(lon) + s(lat),
+  formula = present ~ s(WC_alt) + s(WC_bio1) + s(WC_bio2) + s(ER_tri) + s(ER_topoWet) + s(lon) + s(lat) + s(WC_bio12) + s(ER_annualPET) + s(ER_aridityIndexThornthwaite),
   family = binomial, data = d)
 summary(mdl_gen_add)
 ```
 
 ```{r}
-# show term plot
+# show term plot for GAM
 plot(mdl_gen_add, scale=0)
 ```
 
+The environmental predictors (ie. excluding latitude and longitude) that seems to contribute most towards presence verse absence are annual precipitation (WC_bio12), annual mean temperature (WC_bio1), and annual potential evapotranspiration (ER_annualPET).
+
 ## Maxent (Maximum Entropy)
-Maxent is a commonly used species distribution model that performs well with few input data points, only requires presence points and is easy to use with a Java graphical user interface (GUI). Since this model only has presence points, it samples the background for comparision.
+Maxent is a commonly used species distribution model that performs well with few input data points, only requires presence points and is easy to use with a Java graphical user interface (GUI). Since this model only has presence points, it samples the background for comparison.
 ```{r}
 # load extra packages
 librarian::shelf(
@@ -358,20 +365,19 @@ if (!interactive())
 ```
 
 ```{r}
-# get environmental rasters
-# NOTE: the first part of Lab 1. SDM - Explore got updated to write this clipped environmental raster stack
-
-# env_stack_grd <- file.path(dir_data, "env_stack.grd")
-# env_stack <- stack(env_stack_grd)
-# plot(env_stack, nc=2)
+env_stack_grd <- file.path(dir_data, "env_stack.grd")
+env_stack <- stack(env_stack_grd)
+plot(env_stack, nc=2)
 ```
 
 ```{r}
 # get the presence-only observation points (maxent extracts raster values for you)
-# obs_geo2<- file.path(dir_data, "obs")
+obs_geo <- file.path(dir_data, "obs.geojson")
 obs_sp <- read_sf(obs_geo) %>%
   sf::as_Spatial() # maxent prefers sp::SpatialPoints over newer sf::sf class
+```
 
+```{r}
 # fit a maxent entropy model
 if (!file.exists(mdl_maxent_rds)){
   mdl_maxent <- maxent(env_stack, obs_sp)
@@ -398,6 +404,8 @@ plot(y_predict_maxent, main='Maxent, raw prediction')
 data(wrld_simpl, package = "maptools")
 plot(wrld_simpl, add=TRUE, border='dark grey')
 ```
+
+Based on the results of the Maxent model, mean annual temperature (WC_bio1) contributes most towards predicting presences, followed by altitude (WC_alt). GAM ranked annual mean temperature (WC_bio1) second and altitude (WC_alt) fourth.
 
 # Part 3: Decision Trees
 Use decision trees as a classification technique to the data with the response being categorical (factor(present))
