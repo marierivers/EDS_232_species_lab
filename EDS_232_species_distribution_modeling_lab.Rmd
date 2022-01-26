@@ -41,7 +41,7 @@ dir.create(dir_data, showWarnings = F, recursive = T)
 ```{r}
 obs_csv <- file.path(dir_data, "obs.csv")
 obs_geo <- file.path(dir_data, "obs.geojson")
-redo    <- TRUE # change back to FALSE...xxx
+redo    <- FALSE 
 
 if (!file.exists(obs_geo) | redo){
   # get species occurrence data from GBIF with coordinates
@@ -476,6 +476,7 @@ rpart.plot(mdl_stump)
 ```
 
 ## Partition, depth=default
+rpart = recursive partitioning 
 ```{r}
 # decision tree with defaults
 mdl_default_tree <- rpart(present ~ ., data = d_train)
@@ -491,7 +492,7 @@ rpart.plot(mdl_default_tree)
 plotcp(mdl_default_tree)
 ```
 
-Based on the complexity plot threshold, 3 threes are recommended.
+Based on the complexity plot threshold, 5 trees are recommended.
 
 ```{r}
 # rpart cross validation results
@@ -516,13 +517,13 @@ Variable importance based on the total reduction in MSE for the Ames Housing dec
 vip(mdl_caret, num_features = 40, bar = FALSE)
 ```
 
-The figure above indicates that the top three most important variables of this model are annual potential evapotranspiration (ER_annaulPET), altitude (WC_alt), and annual precipitation (WC_bio12).
+The figure above indicates that the top three most important variables of this model are altitude (WC_alt), annual precipitation (WC_bio12) and annual potential evapotranspiration (ER_annaulPET).
 
 ```{r}
 # construct partial dependence plots
-p1 <- partial(mdl_caret, pred.var = "lat") %>%  autoplot()
-p2 <- partial(mdl_caret, pred.var = "WC_bio2") %>% autoplot()
-p3 <- partial(mdl_caret, pred.var = c("lat", "WC_bio2")) %>% 
+p1 <- partial(mdl_caret, pred.var = "WC_alt") %>%  autoplot()
+p2 <- partial(mdl_caret, pred.var = "WC_bio12") %>% autoplot()
+p3 <- partial(mdl_caret, pred.var = c("WC_alt", "WC_bio12")) %>% 
   plotPartial(levelplot = FALSE, zlab = "yhat", drape = TRUE,
               colorkey = TRUE, screen = list(z = -20, x = -60))
 ```
@@ -571,10 +572,11 @@ gridExtra::grid.arrange(p1_rf, p2_rf, nrow = 1)
 
 Most important variables based on impurity (left) and permutation (right).
 
+For the rpart model, altitude (WC_alt) was the most important variable followed by annual precipitation (WC_bio12). For the random forest model, annual mean temperature (WC_bio1) was the most important variable and altitude (WC_alt) was the second most important variable (excluding latitude). Terrain roughness index (ER_tri) and topographic wetness (ER_topoWet) were the least important variables for both models.
+
 # Part 4: Evaluate Models
 ```{r}
-librarian::shelf(
-  usdm) # uncertainty analysis for species distribution models: vifcor()
+librarian::shelf(usdm) # uncertainty analysis for species distribution models: vifcor()
 ```
 
 ```{r}
@@ -592,7 +594,6 @@ pts <- read_sf(pts_geo)
 env_stack < raster::stack(env_stack_grd)
 ```
 ## Split observations into training and testing
-xxx...this was done around line 400
 ```{r}
 pts_split <- rsample::initial_split(
   pts, prop = 0.8, strata = "present")
@@ -640,6 +641,8 @@ env_stack_v <- usdm::exclude(env_stack, v)
 pairs(env_stack_v)
 ```
 
+The variable terrain roughness index (ER_tri) was removed due to multicollinearity. Annual potential evapotranspiration (ER_annualPET) was also removed. 
+
 ```{r}
 # fit a maximum entropy model
 if(!file.exists(mdl_maxv_rds)){
@@ -653,6 +656,8 @@ mdl_maxv <- read_rds(mdl_maxv_rds)
 # plot variable contributions per predictor
 plot(mdl_maxv)
 ```
+
+The most important remaining variable is annual mean temperature (WC_bio1) followed by altitude (WC_alt), mean diurnal temperature range (WC_bio2), then topographic wetness (ER_topoWet).
 
 ```{r}
 # plot term plots
@@ -701,7 +706,6 @@ thr
 ```{r}
 p_true <- na.omit(raster::extract(y_maxv, pts_test_p) >= thr)
 a_true <- na.omit(raster::extract(y_maxv, pts_test_a) < thr)
-
 ```
 
 ```{r}
@@ -728,6 +732,5 @@ points(fpr, tpr, pch=23, bg='blue')
 
 ```{r}
 plot(y_maxv > thr)
-
 ```
 
